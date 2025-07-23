@@ -64,8 +64,31 @@ class MultiHeadAttention(nn.Module):
 
         return output, attn_weights
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.d_model = d_model
 
-class TransformerBLock(nn.Module):
+    def forward(self, x):
+        B, L, d_model = x.size()
+        position = torch.arange(0, L, dtype=torch.float, device=x.device).unsqueeze(1)
+
+        # Calculate frequency
+        div_term = torch.exp(
+            -math.log(10000.0) * torch.arange(0, self.d_model, 2, device=x.device).float() / self.d_model)
+
+        # positional encodings
+        pe = torch.zeros(L, d_model, device=x.device)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        #singleton dimension ->  (1, L, d_model)
+        pe = pe.unsqueeze(0)
+
+        # input+pe
+        return x + pe
+
+class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, ffn_dim, dropout=0.1):
         super().__init__()
 
@@ -92,3 +115,36 @@ class TransformerBLock(nn.Module):
         x = self.ffn_norm(x + ffn_out)
 
         return x
+
+class TransformerLM(nn.Module):
+    def __init__(self, vocab_size, d_model, n_heads, n_layers=1, dropout=0.1):
+        super().__init__()
+
+        self.embeddings = nn.Embedding(vocab_size, d_model)
+        self.position = PositionalEncoding(d_model)
+        self.blocks = nn.ModuleList([
+            TransformerBlock(d_model, n_heads, ffn_dim=d_model * 4, dropout=dropout)
+            for _ in range(n_layers)
+        ])
+        self.classifier = nn.Linear(d_model, vocab_size)
+
+    def generateCausalMask(self, L, device):
+        # Shape: [L, L]
+        mask = torch.triu(torch.ones(L, L, device=device), diagonal=1).bool()
+        # Shape needed: [1, 1, L, L] for broadcasting with [B, heads, L, L]
+        return mask.unsqueeze(0).unsqueeze(0)
+
+    def forward(self, x):
+        B, L = x.size()
+        x = self.embeddings(x)                    # [B, L, d_model]
+        x = self.position(x)                      # [B, L, d_model]
+
+        # Create causal mask [1, 1, L, L]
+        causal_mask = self.generateCausalMask(L, x.device)
+
+        # Pass through each Transformer block with masking
+        for block in self.blocks:
+            x = block(x, mask=causal_mask)
+
+        logits = self.classifier(x)               # [B, L, vocab_size]
+        return logits
