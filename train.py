@@ -9,7 +9,7 @@ from functools import partial
 import sys
 
 from models.TransformerLM import *
-from data.openwebtext_data import *
+from data.BuildVocab import *
 
 from dotenv import load_dotenv
 
