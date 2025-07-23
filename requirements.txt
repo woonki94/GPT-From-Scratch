@@ -1,0 +1,9 @@
+torch>=2.0
+torcheval>=0.0.6
+matplotlib
+tqdm
+wandb
+datasets
+spacy>=3.7.2
+scikit-learn
+
