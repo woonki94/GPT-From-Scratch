@@ -59,7 +59,7 @@ class OpenWebTextDataset(Dataset):
   def __init__(self,split="train", vocab = None):
 
     print("Loading data...")
-    dataset = load_dataset("openwebtext", split=split)
+    dataset = load_dataset("Skylion007/openwebtext", split=split)
     self.data = [x["text"] for x in random.sample(list(dataset), MAX_STORIES)]
 
 
