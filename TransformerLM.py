@@ -26,7 +26,7 @@ class MultiHeadAttention(nn.Module):
         # Dropout on attention weights
         self.dropout = nn.Dropout(dropout)
 
-        # Scaling factor
+        # Scaling factor (root dim)
         self.scale = math.sqrt(self.d_head)
 
     def forward(self, query, key_value, mask=None):
@@ -64,3 +64,31 @@ class MultiHeadAttention(nn.Module):
 
         return output, attn_weights
 
+
+class TransformerBLock(nn.Module):
+    def __init__(self, d_model, n_heads, ffn_dim, dropout=0.1):
+        super().__init__()
+
+        self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
+        self.attn_norm = nn.LayerNorm(d_model)
+        self.attn_dropout = nn.Dropout(dropout)
+
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, ffn_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(ffn_dim, d_model),
+            nn.Dropout(dropout)
+        )
+        self.ffn_norm = nn.LayerNorm(d_model)
+
+    def forward(self, x, mask=None):
+        # Multi-head self-attention with residual connection and layer norm
+        attn_out, _ = self.attn(x, x, mask)
+        x = self.attn_norm(x + self.attn_dropout(attn_out))
+
+        # Feed-forward with residual connection and layer norm
+        ffn_out = self.ffn(x)
+        x = self.ffn_norm(x + ffn_out)
+
+        return x
