@@ -59,7 +59,7 @@ class OpenWebTextDataset(Dataset):
   def __init__(self,split="train", vocab = None):
 
     print("Loading data...")
-    dataset = load_dataset("Skylion007/openwebtext", split=split)
+    dataset = load_dataset("teknium/ShareGPT_Vicuna_unfiltered", split=split)
     self.data = [x["text"] for x in random.sample(list(dataset), MAX_STORIES)]
 
 
