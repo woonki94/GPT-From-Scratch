@@ -5,4 +5,4 @@
 /venv
 models/__pycache__/
 wandbkey.env
-
+data/__pycache__/
