@@ -3,7 +3,7 @@ torcheval>=0.0.6
 matplotlib
 tqdm
 wandb
-datasets
+datasets == 3.3.2
 spacy>=3.7.2
 scikit-learn
 dotenv

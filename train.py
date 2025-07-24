@@ -7,6 +7,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import signal
 from functools import partial
 import sys
+import os
 
 from models.TransformerLM import *
 from data.BuildVocab import *
@@ -20,7 +21,7 @@ import wandb
 from tqdm import tqdm
 from spacy.tokenizer import Tokenizer
 #torch.serialization.add_safe_globals([Vocabulary, Tokenizer])
-
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 use_cuda_if_avail = True
 if use_cuda_if_avail and torch.cuda.is_available():
     device = "cuda"

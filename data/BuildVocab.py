@@ -14,7 +14,7 @@ import random
 random.seed(0)
 
 MAX_LEN = 300
-MAX_EXAMPLES = 250000
+MAX_EXAMPLES = 250
 
 class Vocabulary:
   def __init__(self, corpus, tokenizer):
@@ -73,7 +73,7 @@ def cleantext(text):
 def clean_text(example):
     text = example["text"].strip().lower()
     text = re.sub(r'<[^>]+>', '', text)  # Remove HTML
-    re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
     text = " ".join(text.split())        # Normalize whitespace
 
     example["text"] = text
@@ -106,6 +106,7 @@ class OpenWebTextDataset(Dataset):
       print("Building vocab...")
       self.vocab = Vocabulary(self.data, spacy.load('en_core_web_sm').tokenizer)
     else:
+      print("Loading Existing Vocab")
       self.vocab = vocab
 
   def __len__(self):
@@ -124,6 +125,7 @@ class OpenWebTextDataset(Dataset):
     return xx_pad
 
 def save_vocab(vocab, file_path="./chkpts/vocab.pkl"):
+  os.makedirs(os.path.dirname(file_path), exist_ok = True )
   with open(file_path, 'wb') as f:
     pickle.dump(vocab, f)
   print(f"Vocabulary saved to {file_path}")
