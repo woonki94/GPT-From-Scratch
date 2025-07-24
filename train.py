@@ -19,7 +19,7 @@ import string
 import wandb
 from tqdm import tqdm
 from spacy.tokenizer import Tokenizer
-torch.serialization.add_safe_globals([Vocabulary, Tokenizer])
+#torch.serialization.add_safe_globals([Vocabulary, Tokenizer])
 
 use_cuda_if_avail = True
 if use_cuda_if_avail and torch.cuda.is_available():

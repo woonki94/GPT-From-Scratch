@@ -1,6 +1,8 @@
 import os.path
 import pickle
 
+import re
+from cleantext import clean
 import torch
 from collections import Counter
 from torch.utils.data import Dataset, DataLoader
@@ -12,7 +14,7 @@ import random
 random.seed(0)
 
 MAX_LEN = 300
-MAX_STORIES = 250000
+MAX_EXAMPLES = 250000
 
 class Vocabulary:
   def __init__(self, corpus, tokenizer):
@@ -54,13 +56,50 @@ class Vocabulary:
 
     return word2idx, idx2word
 
+def cleantext(text):
+    return clean(
+        text,
+        fix_unicode=True,
+        to_ascii=False,
+        lower=True,
+        no_line_breaks=True,
+        no_urls=True,
+        no_emails=False,
+        no_punct=True,
+        replace_with_punct="",
+    )
+
+# Cleaning function (lightweight)
+def clean_text(example):
+    text = example["text"].strip().lower()
+    text = re.sub(r'<[^>]+>', '', text)  # Remove HTML
+    re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    text = " ".join(text.split())        # Normalize whitespace
+
+    example["text"] = text
+    return example
+
+
 class OpenWebTextDataset(Dataset):
 
   def __init__(self,split="train", vocab = None):
 
     print("Loading data...")
-    dataset = load_dataset("teknium/ShareGPT_Vicuna_unfiltered", split=split)
-    self.data = [x["text"] for x in random.sample(list(dataset), MAX_STORIES)]
+    dataset = load_dataset("Skylion007/openwebtext", split=split, trust_remote_code=True)
+
+    print("Cleaning dataset...")
+    dataset = dataset.map(clean_text, num_proc=4)
+
+    #drop empty examples
+    dataset = dataset.filter(lambda x: len(x["text"].strip()) > 0)
+
+    #subsample if necessary
+    if len(dataset) > MAX_EXAMPLES:
+        dataset = dataset.select(random.sample(range(len(dataset)), MAX_EXAMPLES))
+
+    self.data = [x["text"] for x in dataset]
+
+    #self.data = [x["text"] for x in random.sample(list(dataset), MAX_EXAMPLES)]
 
 
     if vocab == None:
