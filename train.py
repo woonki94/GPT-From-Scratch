@@ -29,7 +29,7 @@ else:
     device = "cpu"
 
 config = {
-    "bs":64,   # batch size
+    "bs":32,   # batch size
     "lr":0.0003, # learning rate
     "l2reg":0.0000001, # weight decay
     "max_epoch":10,

@@ -130,9 +130,9 @@ class TransformerLM(nn.Module):
 
     def generateCausalMask(self, L, device):
         # Shape: [L, L]
-        mask = torch.triu(torch.ones(L, L, device=device), diagonal=1).bool()
+        mask = torch.triu(torch.ones(L, L, device=device), diagonal=1).to(torch.bool)
         # Shape needed: [1, 1, L, L] for broadcasting with [B, heads, L, L]
-        return mask.unsqueeze(0).unsqueeze(0)
+        return mask
 
     def forward(self, x):
         B, L = x.size()

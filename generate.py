@@ -1,5 +1,5 @@
 import torch
-torch.use_deterministic_algorithms(True)
+torch.use_deterministic_algorithms(False)
 import sys
 from models.TransformerLM import *
 from data.BuildVocab import *
@@ -19,7 +19,7 @@ else:
 MAX_LENGTH = 500
 
 def main():
-   CHKPT_PATH = "./chkpts/wp8GWz_openweb"
+   CHKPT_PATH = "./chkpts/L19FAg_GPT"
    chkpt = torch.load(CHKPT_PATH, weights_only=False)
    config = chkpt['config']
 

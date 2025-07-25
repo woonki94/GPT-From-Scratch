@@ -6,15 +6,15 @@ from cleantext import clean
 import torch
 from collections import Counter
 from torch.utils.data import Dataset, DataLoader
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 import spacy
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 import random
 random.seed(0)
 
-MAX_LEN = 300
-MAX_EXAMPLES = 250
+MAX_LEN = 128
+MAX_EXAMPLES = 8000
 
 class Vocabulary:
   def __init__(self, corpus, tokenizer):
@@ -23,7 +23,7 @@ class Vocabulary:
 
   def __len__(self):
     return len(self.word2idx)
-  
+
   def text2idx(self, text):
     tokens = [str(x).strip().lower() for x in self.tokenizer(text)]
     return [self.word2idx[t] if t in self.word2idx.keys() else self.word2idx['<UNK>'] for t in tokens]
@@ -34,13 +34,13 @@ class Vocabulary:
 
   def build_vocab(self,corpus):
     cntr = Counter()
-    for datapoint in tqdm(corpus):     
+    for datapoint in tqdm(corpus):
       cntr.update( [str(x).strip().lower() for x in self.tokenizer(datapoint)] )
 
-    tokens = [t for t,c in cntr.items() if c >= 30]
+    tokens = [t for t,c in cntr.items() if c >= 1]
     word2idx = {t:i+4 for i,t in enumerate(tokens)}
     idx2word = {i+4:t for i,t in enumerate(tokens)}
-    
+
     word2idx['<PAD>'] = 0  #add padding token
     idx2word[0] = '<PAD>'
 
@@ -52,12 +52,12 @@ class Vocabulary:
 
     word2idx['<UNK>'] = 3  #add padding token
     idx2word[3] = '<UNK>'
-    
+
 
     return word2idx, idx2word
 
 def cleantext(text):
-    return clean(
+    text= clean(
         text,
         fix_unicode=True,
         to_ascii=False,
@@ -65,9 +65,10 @@ def cleantext(text):
         no_line_breaks=True,
         no_urls=True,
         no_emails=False,
-        no_punct=True,
-        replace_with_punct="",
+        no_punct=False,
     )
+    text = re.sub(r'<[^>]+>', '', text)  # Remove HTML
+    return " ".join(text.split()) #Normlaize whitespace
 
 # Cleaning function (lightweight)
 def clean_text(example):
@@ -81,23 +82,26 @@ def clean_text(example):
 
 
 class OpenWebTextDataset(Dataset):
+  def __init__(self, split="train", vocab=None, force_reprocess=False):
+    cache_path = f"./cached/openwebtext_cleaned_{split}"
 
-  def __init__(self,split="train", vocab = None):
+    if os.path.exists(cache_path) and not force_reprocess:
+        print(f"Loading cleaned dataset from {cache_path}")
+        dataset = load_from_disk(cache_path)
+    else:
+        print("Loading raw data...")
+        dataset = load_dataset("Skylion007/openwebtext", split=split, trust_remote_code=True)
 
-    print("Loading data...")
-    dataset = load_dataset("Skylion007/openwebtext", split=split, trust_remote_code=True)
+        print("Cleaning dataset...")
+        dataset = dataset.map(clean_text, num_proc=4, desc="Preprocessing Data")
+        dataset = dataset.filter(lambda x: len(x["text"].strip()) > 0)
 
-    print("Cleaning dataset...")
-    dataset = dataset.map(clean_text, num_proc=4)
+        if len(dataset) > MAX_EXAMPLES:
+            dataset = dataset.select(random.sample(range(len(dataset)), MAX_EXAMPLES))
 
-    #drop empty examples
-    dataset = dataset.filter(lambda x: len(x["text"].strip()) > 0)
+        dataset.save_to_disk(cache_path)
 
-    #subsample if necessary
-    if len(dataset) > MAX_EXAMPLES:
-        dataset = dataset.select(random.sample(range(len(dataset)), MAX_EXAMPLES))
-
-    self.data = [x["text"] for x in dataset]
+    self.data = [x["text"] for x in dataset] 
 
     #self.data = [x["text"] for x in random.sample(list(dataset), MAX_EXAMPLES)]
 
@@ -117,7 +121,7 @@ class OpenWebTextDataset(Dataset):
     l = min(MAX_LEN, len(x))
     numeralized = [self.vocab.word2idx['<SOS>']]+x[:l]+[self.vocab.word2idx['<EOS>']]
     return torch.tensor(numeralized)
-  
+
   @staticmethod
   def pad_collate(batch):
     xx_pad = pad_sequence(batch, batch_first=True, padding_value=0)
@@ -147,10 +151,10 @@ def getOpenwebtextDataloadersAndVocab(batch_size=128, vocab_file = './chkpts/voc
     print("No existing vocabulary found. Building a new one...")
     train = OpenWebTextDataset(split="train")
     save_vocab(train.vocab, vocab_file)
-  
+
   collate = OpenWebTextDataset.pad_collate
   train_loader = DataLoader(train, batch_size=batch_size, num_workers=8, shuffle=True, collate_fn=collate, drop_last=True)
-  
+
   return train_loader, train.vocab
 
 

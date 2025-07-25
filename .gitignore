@@ -6,3 +6,4 @@
 models/__pycache__/
 wandbkey.env
 data/__pycache__/
+/cached/
