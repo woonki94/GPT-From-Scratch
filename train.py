@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import matplotlib.pyplot as plt
 
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -25,11 +26,13 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 use_cuda_if_avail = True
 if use_cuda_if_avail and torch.cuda.is_available():
     device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
 else:
     device = "cpu"
 
 config = {
-    "bs":32,   # batch size
+    "bs":64,   # batch size
     "lr":0.0003, # learning rate
     "l2reg":0.0000001, # weight decay
     "max_epoch":10,
@@ -46,10 +49,22 @@ def dryRun():
   L = 300
   V = 8000
   input =  torch.randint(0, V, (B, L)).to(device)
-  storylm = TransformerLM(V, config["d_model"], config["n_heads"], config["n_layers"])
-  storylm.to(device)
+  tmp_lm = TransformerLM(V, config["d_model"], config["n_heads"], config["n_layers"])
+  tmp_lm.to(device)
+
+  # Generate and inspect causal mask
+  causal_mask = tmp_lm.generateCausalMask(L, input.device)  # [L, L]
+  print("Causal mask (shape:", causal_mask.shape, ")")
+  print(causal_mask.int())  # Print matrix
+
+  # Optional: Visualize
+  plt.imshow(causal_mask.cpu().numpy(), cmap='Greys')
+  plt.title("Causal Mask")
+  plt.xlabel("Key Positions")
+  plt.ylabel("Query Positions")
+  plt.show()
   
-  out = storylm(input)
+  out = tmp_lm(input)
 
   loss = out.sum()
   loss.backward()
@@ -63,12 +78,12 @@ def main():
 
     train_loader, vocab = getOpenwebtextDataloadersAndVocab(config["bs"])
     print("Words: "+str(len(vocab)))
-    storylm = TransformerLM(len(vocab), config["d_model"], config["n_heads"], config["n_layers"])
-    print(storylm)
+    tmp_lm = TransformerLM(len(vocab), config["d_model"], config["n_heads"], config["n_layers"])
+    print(tmp_lm)
 
-    torch.compile(storylm)
+    torch.compile(tmp_lm)
 
-    train(storylm, train_loader, vocab)
+    train(tmp_lm, train_loader, vocab)
 
 
 

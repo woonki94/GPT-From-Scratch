@@ -14,7 +14,7 @@ import random
 random.seed(0)
 
 MAX_LEN = 128
-MAX_EXAMPLES = 8000
+MAX_EXAMPLES = 100
 
 class Vocabulary:
   def __init__(self, corpus, tokenizer):
