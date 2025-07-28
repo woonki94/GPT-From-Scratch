@@ -8,3 +8,5 @@ spacy>=3.7.2
 scikit-learn
 dotenv
 clean-text==0.6.0
+tiktoken
+numpy

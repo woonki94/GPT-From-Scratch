@@ -9,6 +9,7 @@ import signal
 from functools import partial
 import sys
 import os
+import numpy as np
 
 from models.TransformerLM import *
 from data.BuildVocab import *
@@ -21,6 +22,9 @@ import string
 import wandb
 from tqdm import tqdm
 from spacy.tokenizer import Tokenizer
+
+from data.LoadTokenized import get_tokenized_dataloader
+
 #torch.serialization.add_safe_globals([Vocabulary, Tokenizer])
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 use_cuda_if_avail = True
@@ -40,6 +44,27 @@ config = {
     "n_heads":8,
     "n_layers":8
 }
+
+
+def load_tokenized_dataset(bin_path, meta_path, block_size=256):
+    # Load token IDs
+    token_ids = np.memmap(bin_path, dtype=np.uint16, mode="r")
+
+    # Load metadata
+    with open(meta_path, "rb") as f:
+        meta = pickle.load(f)
+
+    vocab_size = meta["vocab_size"]
+
+    # Split into blocks for training
+    num_blocks = len(token_ids) // block_size
+    token_ids = token_ids[:num_blocks * block_size]  # truncate
+    token_ids = token_ids.reshape((num_blocks, block_size))
+
+    # Convert to torch tensor
+    token_tensor = torch.from_numpy(token_ids).long()
+
+    return token_tensor, vocab_size
 
 
 # This just runs a dummy batch through the model to see if anything breaks.
@@ -75,99 +100,91 @@ def dryRun():
 def main():
     # Quick sanity check before we do anything heavy
     dryRun()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(base_dir, "cached/openwebtext_tokenized")
 
-    train_loader, vocab = getOpenwebtextDataloadersAndVocab(config["bs"])
-    print("Words: "+str(len(vocab)))
-    tmp_lm = TransformerLM(len(vocab), config["d_model"], config["n_heads"], config["n_layers"])
+    bin_path = os.path.join(output_dir, "cleaned_data_100.bin")
+    meta_path = os.path.join(output_dir, "meta_100.pkl")
+    block_size = 256
+
+    train_loader, vocab_size = get_tokenized_dataloader(config["bs"], bin_path, meta_path, block_size)
+    print("Vocab size (from tokenized data):", vocab_size)
+
+    tmp_lm = TransformerLM(vocab_size, config["d_model"], config["n_heads"], config["n_layers"])
     print(tmp_lm)
 
     torch.compile(tmp_lm)
 
-    train(tmp_lm, train_loader, vocab)
+    train(tmp_lm, train_loader)
 
 
+def train(model, train_loader):
+    config["arch"] = str(model)
+    run_name = generateRunName()
 
-def train(model, train_loader, vocab):
-  # Log our exact model architecture string
-  config["arch"] = str(model)
-  run_name = generateRunName()
+    # Startup wandb logging
+    load_dotenv(dotenv_path="wandbkey.env")
+    wandb_api_key = os.getenv("WANDB_API_KEY")
+    wandb.login(wandb_api_key)
+    wandb.init(project="GPT-From-Scratch", name=run_name, config=config)
 
-  # Startup wandb logging
-  load_dotenv(dotenv_path="wandbkey.env")
-  wandb_api_key = os.getenv("WANDB_API_KEY")  # wandbapikey
+    model.to(device)
 
-  wandb.login(wandb_api_key)
-  wandb.init(project="GPT-From-Scratch", name=run_name, config=config)
+    optimizer = AdamW(model.parameters(), lr=config["lr"], weight_decay=config["l2reg"])
+    scheduler = CosineAnnealingLR(optimizer, T_max=config["max_epoch"])
 
-  # Move model to the GPU
-  model.to(device)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
 
-  # Set up optimizer and our learning rate schedulers
-  optimizer = AdamW(model.parameters(), lr=config["lr"], weight_decay=config["l2reg"])
-  scheduler = CosineAnnealingLR(optimizer, T_max = config["max_epoch"])
-  
-  # Loss
-  criterion = nn.CrossEntropyLoss(ignore_index=0)
+    iteration = epoch = 0
+    pbar = tqdm(total=config["max_epoch"] * len(train_loader), desc="Training Iterations", unit="batch")
 
-  # Main training loop with progress bar
-  iteration = epoch = 0
-  pbar = tqdm(total=config["max_epoch"]*len(train_loader), desc="Training Iterations", unit="batch")
-  for epoch in range(config["max_epoch"]):
+    for epoch in range(config["max_epoch"]):
+        signal.signal(signal.SIGINT, partial(interruptHandler,
+                                             epoch, model, optimizer,
+                                             scheduler, config, run_name))
+        signal.signal(signal.SIGTERM, partial(interruptHandler,
+                                              epoch, model, optimizer,
+                                              scheduler, config, run_name))
+        model.train()
 
-    #Set up signal catch functions to save our model on interrupt 
-    signal.signal(signal.SIGINT, partial(interruptHandler, 
-                                         epoch, model, optimizer, 
-                                         scheduler, config, vocab, run_name))
-    signal.signal(signal.SIGTERM, partial(interruptHandler, 
-                                         epoch, model, optimizer, 
-                                         scheduler, config, vocab, run_name))
-    model.train()
+        wandb.log({"LR/lr": scheduler.get_last_lr()[0]}, step=iteration)
 
-    # Log LR
-    wandb.log({"LR/lr": scheduler.get_last_lr()[0]}, step=iteration)
+        for x in train_loader:
+            x = x.to(device)
+            out = model(x)[:, :-1, :]
+            x = x[:, 1:]
 
-    for x in train_loader:
-      x = x.to(device)
+            loss = criterion(out.permute(0, 2, 1), x)
 
-      out = model(x)[:,:-1,:]
-      x = x[:,1:]
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-      loss = criterion(out.permute(0,2,1), x)
+            wandb.log({"Loss/train": loss.item()}, step=iteration)
+            pbar.update(1)
+            iteration += 1
 
-      loss.backward()
-      optimizer.step()
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'config': config
+        }, f"./chkpts/{run_name}")
 
-      optimizer.zero_grad()
+        scheduler.step()
 
-      wandb.log({"Loss/train": loss.item()}, step=iteration)
-      pbar.update(1)
-      iteration+=1
-
-    
-    torch.save({'epoch':epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict':optimizer.state_dict(),
-                'scheduler_state_dict':scheduler.state_dict(),
-                'config':config,
-                "vocab": vocab},
-                "./chkpts/"+run_name)
-
-    
-
-    # Adjust LR
-    scheduler.step()
-
-  wandb.finish()
-  pbar.close()
+    wandb.finish()
+    pbar.close()
 
        
-def interruptHandler(epoch, model, optimizer, scheduler, config, vocab, run_name, sig, frame):
+def interruptHandler(epoch, model, optimizer, scheduler, config, run_name, sig, frame):
   torch.save({'epoch':epoch,
               'model_state_dict': model.state_dict(),
               'optimizer_state_dict':optimizer.state_dict(),
               'scheduler_state_dict':scheduler.state_dict(),
               'config':config,
-              "vocab": vocab},
+              },
               "./chkpts/"+run_name+"_interrupt")
   sys.exit(0)
 
