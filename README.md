@@ -75,4 +75,3 @@ This allows:
 
 ---
 
-Would you like help rewriting your code to use a tokenized dataset instead?
