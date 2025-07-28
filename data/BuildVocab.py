@@ -124,9 +124,15 @@ class OpenWebTextDataset(Dataset):
 
   @staticmethod
   def pad_collate(batch):
-    xx_pad = pad_sequence(batch, batch_first=True, padding_value=0)
-
-    return xx_pad
+      max_len = MAX_LEN + 2
+      padded = []
+      for x in batch:
+          if len(x) < max_len:
+              x = F.pad(x, (0, max_len - len(x)), value=0)
+          else:
+              x = x[:max_len]
+          padded.append(x)
+      return torch.stack(padded)
 
 def save_vocab(vocab, file_path="./chkpts/vocab.pkl"):
   os.makedirs(os.path.dirname(file_path), exist_ok = True )
