@@ -8,7 +8,6 @@ To generate the text, run generate.py
 
 with 250000 MAX_EXAMPLES in buildVocab, ran into GPU ERROR -> need to figure out to make memory safe model or training ,,
 
-Great question — let’s break it down:
 
 ---
 
