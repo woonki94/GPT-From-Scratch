@@ -1,3 +1,5 @@
+
+
 Project Blog URL: https://woonki94.pages.dev/Projects/GPT2-From-Scratch/
 
 Run train.py : it will build vocab from openwebtext, and train the transformer and embedding

@@ -24,7 +24,7 @@ from tqdm import tqdm
 from spacy.tokenizer import Tokenizer
 
 from data.LoadTokenized import get_tokenized_dataloader
-
+from data.bpeTonkenizer import *
 #torch.serialization.add_safe_globals([Vocabulary, Tokenizer])
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 use_cuda_if_avail = True
@@ -46,26 +46,6 @@ config = {
 }
 
 
-def load_tokenized_dataset(bin_path, meta_path, block_size=256):
-    # Load token IDs
-    token_ids = np.memmap(bin_path, dtype=np.uint16, mode="r")
-
-    # Load metadata
-    with open(meta_path, "rb") as f:
-        meta = pickle.load(f)
-
-    vocab_size = meta["vocab_size"]
-
-    # Split into blocks for training
-    num_blocks = len(token_ids) // block_size
-    token_ids = token_ids[:num_blocks * block_size]  # truncate
-    token_ids = token_ids.reshape((num_blocks, block_size))
-
-    # Convert to torch tensor
-    token_tensor = torch.from_numpy(token_ids).long()
-
-    return token_tensor, vocab_size
-
 
 # This just runs a dummy batch through the model to see if anything breaks.
 # Avoids having to load all the data before finding out the model is broken.
@@ -82,7 +62,6 @@ def dryRun():
   print("Causal mask (shape:", causal_mask.shape, ")")
   print(causal_mask.int())  # Print matrix
 
-  # Optional: Visualize
   plt.imshow(causal_mask.cpu().numpy(), cmap='Greys')
   plt.title("Causal Mask")
   plt.xlabel("Key Positions")
@@ -100,12 +79,16 @@ def dryRun():
 def main():
     # Quick sanity check before we do anything heavy
     dryRun()
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(base_dir, "cached/openwebtext_tokenized")
 
-    bin_path = os.path.join(output_dir, "cleaned_data_100.bin")
-    meta_path = os.path.join(output_dir, "meta_100.pkl")
+    #load bin meta file
+    
+    dataset_name= 'openwebtext'
+    max_examples = 800000
     block_size = 256
+    bin_path, meta_path = prepare_tokenized_dataset(
+       dataset_name=dataset_name, 
+       max_examples=max_examples
+    )
 
     train_loader, vocab_size = get_tokenized_dataloader(config["bs"], bin_path, meta_path, block_size)
     print("Vocab size (from tokenized data):", vocab_size)
