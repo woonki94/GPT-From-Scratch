@@ -1,6 +1,8 @@
 import torch
 torch.use_deterministic_algorithms(False)
 import sys
+import tiktoken
+
 from models.TransformerLM import *
 from data.BuildVocab import *
 from spacy.tokenizer import Tokenizer
@@ -17,6 +19,14 @@ else:
     device = "cpu"
 
 MAX_LENGTH = 500
+
+enc = tiktoken.get_encoding("gpt2")
+
+def encode(text):
+    return enc.encode(text)
+
+def decode(token_ids):
+    return enc.decode(token_ids)
 
 def main():
    CHKPT_PATH = "./chkpts/Pnf4n0_GPT"
@@ -37,9 +47,12 @@ def main():
     prompt = input("\n\nPrompt:\n")
 
     # numeralize prompt
+    '''
     num_prompt = vocab.text2idx(prompt)
     l = len(num_prompt)
-
+    '''
+    num_prompt = encode(prompt)
+    l = len(num_prompt)
 
     for sampler in [argmaxDecode, sampleDecode, nucleusDecode]:
       torch.manual_seed(0)
@@ -47,28 +60,26 @@ def main():
       torch.cuda.manual_seed(0)
       torch.cuda.manual_seed_all(0)
 
-      src = torch.zeros(1,MAX_LENGTH)
-      src[0,0] = 1 # <SOS>
-      src[0,1:l+1] = torch.Tensor(num_prompt)
-      src = src.to(dtype=int, device=device)
-      print("\n\n")
-      print(sampler)
-      print(prompt, end="",flush=True)
-      for t in range(l+1,MAX_LENGTH):
+      src = torch.zeros(1, MAX_LENGTH, dtype=torch.long, device=device)
+      src[0, 0] = enc.encode("<|startoftext|>")[0] if "<|startoftext|>" in enc._special_tokens else 0
+      src[0, 1:l + 1] = torch.tensor(num_prompt, dtype=torch.long, device=device)
+
+      generated_ids = []
+      for t in range(l + 1, MAX_LENGTH):
           out = model(src)
+          next_token_id = sampler(out[:, t - 1, :])
+          src[0, t] = next_token_id
 
-          src[0,t] =  sampler(out[:,t-1,:])
-
-          w = vocab.idx2text([src[0,t].cpu().item()])[0]
-
-          if w == "<EOS>":
+          if next_token_id == enc.encode("<|endoftext|>")[0]:
               break
-          if not any(x in w for x in [".",",","\"","'","!","?"]):
-              w = " "+w
 
-          print(w,  end='',flush=True)
-      print("\n")
-   sys.exit(1)
+          generated_ids.append(next_token_id)
+
+      output_text = decode(generated_ids)
+      print("\n\n" + sampler.__name__)
+      print(prompt + output_text)
+
+    sys.exit(1)
 
 
 def argmaxDecode(scores):
