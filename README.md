@@ -139,3 +139,8 @@ This allows:
 
 ---
 
+Still dmodel, batch_size, block_size, affects the memory usage. Need some tries to match the memory capacity.
+
+For models like this, with large datasets, memory is always the problem....
+
+
