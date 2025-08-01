@@ -10,3 +10,4 @@ dotenv
 clean-text==0.6.0
 tiktoken
 numpy
+flash-attn

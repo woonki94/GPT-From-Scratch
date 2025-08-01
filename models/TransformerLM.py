@@ -7,6 +7,9 @@ import torch
 import torch.nn as nn
 import math
 
+from flash_attn.modules.mha import MHA
+
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, q_input_dim, cand_input_dim, d_model, n_heads, dropout=0.1):
         super().__init__()
@@ -69,6 +72,24 @@ class MultiHeadAttention(nn.Module):
 
         return output, attn_weights
 
+
+class FlashMultiHeadAttention(nn.Module):
+    def __init__(self, d_model, n_heads, dropout=0.1):
+        super().__init__()
+        self.flash_attn = MHA(
+            embed_dim=d_model,
+            num_heads=n_heads,
+            dropout=dropout,
+            causal=True,     # very important for decoder-style (GPT) models
+            bias=True        # match your original setup
+        )
+
+    def forward(self, x, mask=None):
+        # FlashAttention handles causal masking internally
+        out = self.flash_attn(x)
+        return out, None  # match original API (output, attn_weights)
+
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model):
         super().__init__()
@@ -97,7 +118,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, ffn_dim, dropout=0.1):
         super().__init__()
 
-        self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
+        #self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
+        self.attn = FlashMultiHeadAttention(d_model, n_heads, dropout)
         self.attn_norm = nn.LayerNorm(d_model)
         self.attn_dropout = nn.Dropout(dropout)
 
