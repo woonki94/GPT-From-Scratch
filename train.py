@@ -119,7 +119,7 @@ def train(model, train_loader):
 
     criterion = nn.CrossEntropyLoss(ignore_index=0)
 
-    iteration = epoch = 0
+    global_step = 0
     pbar = tqdm(total=config["max_epoch"] * len(train_loader), desc="Training Iterations", unit="batch")
 
     for epoch in range(config["max_epoch"]):
@@ -130,29 +130,34 @@ def train(model, train_loader):
                                               epoch, model, optimizer,
                                               scheduler, config, run_name))
         model.train()
+        optimizer.zero_grad()
 
-        wandb.log({"LR/lr": scheduler.get_last_lr()[0]}, step=iteration)
+        wandb.log({"LR/lr": scheduler.get_last_lr()[0]}, step=global_step)
 
-        for x in train_loader:
+        for i, x in enumerate(train_loader):
             x = x.to(device)
             out = model(x)[:, :-1, :]
             x = x[:, 1:]
 
             loss = criterion(out.permute(0, 2, 1), x)
-            #gradclip
             grad_accum = config["grad_accum_steps"]
             loss = loss / grad_accum
 
             loss.backward()
 
-            if iteration % grad_accum ==0:
+            if (i + 1) % grad_accum == 0:
                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                optimizer.step()
                optimizer.zero_grad()
-            
-            wandb.log({"Loss/train": loss.item()}, step=iteration)
+
+            wandb.log({"Loss/train": loss.item()}, step=global_step)
             pbar.update(1)
-            iteration += 1
+            global_step += 1
+
+        if (i + 1) % grad_accum != 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            optimizer.zero_grad()
 
         torch.save({
             'epoch': epoch,
@@ -186,4 +191,5 @@ def generateRunName():
   return run_name
 
 
-main()
+if __name__ == "__main__":
+  main()
