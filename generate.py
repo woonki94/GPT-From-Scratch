@@ -29,16 +29,16 @@ def decode(token_ids):
     return enc.decode(token_ids)
 
 def main():
-   CHKPT_PATH = "./chkpts/Pnf4n0_GPT"
+   CHKPT_PATH = "./chkpts/Bh9zaJ_GPT"
    chkpt = torch.load(CHKPT_PATH, weights_only=False)
    config = chkpt['config']
 
    print(CHKPT_PATH +" // "+str(chkpt['epoch']))
    # load vocab
-   vocab = chkpt['vocab']
+   #vocab = chkpt['vocab']
 
    # load model
-   model = TransformerLM(len(vocab), config["d_model"], config["n_heads"], config["n_layers"])
+   model = TransformerLM(enc.n_vocab, config["d_model"], config["n_heads"], config["n_layers"])
    model.load_state_dict(chkpt['model_state_dict'])
    model.to(device)
 
@@ -70,7 +70,7 @@ def main():
           next_token_id = sampler(out[:, t - 1, :])
           src[0, t] = next_token_id
 
-          if next_token_id == enc.encode("<|endoftext|>")[0]:
+          if next_token_id == enc.encode("<|endoftext|>",allowed_special={"<|endoftext|>"})[0]:
               break
 
           generated_ids.append(next_token_id)

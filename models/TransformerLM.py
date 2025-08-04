@@ -32,14 +32,14 @@ class MultiHeadAttention(nn.Module):
         # Scaling factor (root dim)
         self.scale = math.sqrt(self.d_head)
 
-    def forward(self, query, key_value, mask=None):
-        B, T_kv, _ = key_value.size()
-        _, T_q, _ = query.size()
+    def forward(self, qkv, mask=None):
+        B, T_kv, _ = qkv.size()
+        _, T_q, _ = qkv.size()
 
         # Linear projections
-        Q = self.q_proj(query)  # [B, T_q, d_model]
-        K = self.k_proj(key_value)  # [B, T_kv, d_model]
-        V = self.v_proj(key_value)  # [B, T_kv, d_model]
+        Q = self.q_proj(qkv)  # [B, T_qkv, d_model]
+        K = self.k_proj(qkv)  # [B, T_qkv, d_model]
+        V = self.v_proj(qkv)  # [B, T_qkv, d_model]
 
         # Split into heads: [B, T, d_model] → [B, n_heads, T, d_head]
         Q = Q.view(B, T_q, self.n_heads, self.d_head).transpose(1, 2)  # [B, n_heads, T_q, d_head]
@@ -81,7 +81,7 @@ class FlashMultiHeadAttention(nn.Module):
             num_heads=n_heads,
             dropout=dropout,
             causal=True,     # very important for decoder-style (GPT) models
-            bias=True        # match your original setup
+            #bias=True        # match your original setup
         )
 
     def forward(self, x, mask=None):
@@ -134,7 +134,10 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x, mask=None):
         # Multi-head self-attention with residual connection and layer norm
-        attn_out, _ = self.attn(x, x, mask)
+        #attn_out, _ = self.attn(x, x, mask)
+        #for flash_attn
+        attn_out, _ = self.attn( x, mask)
+
         x = self.attn_norm(x + self.attn_dropout(attn_out))
 
         # Feed-forward with residual connection and layer norm

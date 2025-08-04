@@ -10,4 +10,5 @@ dotenv
 clean-text==0.6.0
 tiktoken
 numpy
+psutil
 flash-attn

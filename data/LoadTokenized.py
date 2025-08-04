@@ -18,6 +18,7 @@ def load_tokenized_dataset(bin_path, meta_path, block_size=256):
     with open(meta_path, "rb") as f:
         meta = pickle.load(f)
 
+
     vocab_size = meta["vocab_size"]
 
     num_blocks = len(token_ids) // block_size
@@ -30,5 +31,11 @@ def load_tokenized_dataset(bin_path, meta_path, block_size=256):
 def get_tokenized_dataloader(batch_size, bin_path, meta_path, block_size=256):
     data_tensor, vocab_size = load_tokenized_dataset(bin_path, meta_path, block_size)
     dataset = TokenizedDataset(data_tensor)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size, 
+        shuffle=True,
+        num_workers=8,
+        pin_memory=True,
+        persistent_workers=True,)
     return loader, vocab_size

@@ -37,10 +37,11 @@ else:
 
 config = {
     "bs":64,   # batch size
+    "grad_accum_steps":8, #gradient clipping
     "lr":0.0003, # learning rate
     "l2reg":0.0000001, # weight decay
-    "max_epoch":10,
-    "d_model":256,
+    "max_epoch":3,
+    "d_model":512,
     "n_heads":8,
     "n_layers":8
 }
@@ -83,8 +84,8 @@ def main():
     #load bin meta file
     
     dataset_name= 'openwebtext'
-    max_examples = 800000
-    block_size = 256
+    max_examples = None#800000
+    block_size = 512
     bin_path, meta_path = prepare_tokenized_dataset(
        dataset_name=dataset_name, 
        max_examples=max_examples
@@ -138,11 +139,17 @@ def train(model, train_loader):
             x = x[:, 1:]
 
             loss = criterion(out.permute(0, 2, 1), x)
+            #gradclip
+            grad_accum = config["grad_accum_steps"]
+            loss = loss / grad_accum
 
             loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
 
+            if iteration % grad_accum ==0:
+               torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+               optimizer.step()
+               optimizer.zero_grad()
+            
             wandb.log({"Loss/train": loss.item()}, step=iteration)
             pbar.update(1)
             iteration += 1
