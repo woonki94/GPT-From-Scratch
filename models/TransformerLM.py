@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import math
 
-from flash_attn.modules.mha import MHA
+#from flash_attn.modules.mha import MHA
 
 
 class MultiHeadAttention(nn.Module):
@@ -72,7 +72,7 @@ class MultiHeadAttention(nn.Module):
 
         return output, attn_weights
 
-
+'''
 class FlashMultiHeadAttention(nn.Module):
     def __init__(self, d_model, n_heads, dropout=0.1):
         super().__init__()
@@ -88,7 +88,7 @@ class FlashMultiHeadAttention(nn.Module):
         # FlashAttention handles causal masking internally
         out = self.flash_attn(x)
         return out, None  # match original API (output, attn_weights)
-
+'''
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model):
@@ -118,8 +118,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, ffn_dim, dropout=0.1):
         super().__init__()
 
-        #self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
-        self.attn = FlashMultiHeadAttention(d_model, n_heads, dropout)
+        self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
+        #self.attn = FlashMultiHeadAttention(d_model, n_heads, dropout)
         self.attn_norm = nn.LayerNorm(d_model)
         self.attn_dropout = nn.Dropout(dropout)
 
@@ -132,11 +132,9 @@ class TransformerBlock(nn.Module):
         )
         self.ffn_norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, mask=None):
-        # Multi-head self-attention with residual connection and layer norm
-        #attn_out, _ = self.attn(x, x, mask)
-        #for flash_attn
-        attn_out, _ = self.attn( x, mask)
+    def forward(self, x, mask=None, return_attn=False):
+        #both flash, mha-> compatible
+        attn_out, attn_weights = self.attn( x, mask)
 
         x = self.attn_norm(x + self.attn_dropout(attn_out))
 
@@ -144,7 +142,10 @@ class TransformerBlock(nn.Module):
         ffn_out = self.ffn(x)
         x = self.ffn_norm(x + ffn_out)
 
-        return x
+        if return_attn:
+            return x, attn_weights
+        else:
+            return x
 
 class TransformerLM(nn.Module):
     def __init__(self, vocab_size, d_model, n_heads, n_layers=1, dropout=0.1):
@@ -164,7 +165,7 @@ class TransformerLM(nn.Module):
         # Shape needed: [1, 1, L, L] for broadcasting with [B, heads, L, L]
         return mask
 
-    def forward(self, x):
+    def forward(self, x, return_attn=False):
         B, L = x.size()
         x = self.embeddings(x)                    # [B, L, d_model]
         x = self.position(x)                      # [B, L, d_model]
@@ -172,9 +173,19 @@ class TransformerLM(nn.Module):
         # Create causal mask [1, 1, L, L]
         causal_mask = self.generateCausalMask(L, x.device)
 
+        all_attn_weights = [] if return_attn else None
+
         # Pass through each Transformer block with masking
         for block in self.blocks:
-            x = block(x, mask=causal_mask)
+            if return_attn:
+                x, attn_weights = block(x, mask=causal_mask, return_attn=True)
+                all_attn_weights.append(attn_weights)
+            else:
+                x = block(x, mask=causal_mask)
 
         logits = self.classifier(x)               # [B, L, vocab_size]
-        return logits
+
+        if return_attn:
+            return logits, all_attn_weights
+        else:
+            return logits
