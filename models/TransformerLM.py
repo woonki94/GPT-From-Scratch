@@ -10,7 +10,6 @@ from attentions import MultiHeadAttention, MultiQueryAttention
 #from flash_attn.modules.mha import MHA
 
 
-
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model):
         super().__init__()
@@ -35,6 +34,50 @@ class PositionalEncoding(nn.Module):
         # input+pe
         return x + pe
 
+class MoELayer(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_experts=4, dropout=0.1):
+        super().__init__()
+        self.num_experts = num_experts
+
+        # Expert networks: [E] × MLP(input_dim → hidden_dim → input_dim)
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, input_dim),
+                nn.Dropout(dropout)
+            )
+            for _ in range(num_experts)
+        ])
+
+        # Gating layer: maps input to logits over experts
+        self.gate = nn.Linear(input_dim, num_experts)
+
+    def forward(self, x):
+        """
+        x: [B, T, D]
+        Returns:
+            output: [B, T, D] – MoE-processed tensor
+        """
+        B, T, D = x.size()
+
+        # Compute gating logits and pick top-1 expert per token
+        gate_scores = self.gate(x)                  # [B, T, E]
+        top1 = torch.argmax(gate_scores, dim=-1)    # [B, T]
+
+        # Prepare output
+        output = torch.zeros_like(x)
+
+        for expert_idx, expert in enumerate(self.experts):
+            mask = (top1 == expert_idx).unsqueeze(-1)   # [B, T, 1]
+            expert_input = x * mask                    # [B, T, D] masked
+            expert_output = expert(expert_input)
+            output += expert_output * mask             # accumulate output
+
+        return output
+
+
 class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, ffn_dim, dropout=0.1):
         super().__init__()
@@ -43,7 +86,7 @@ class TransformerBlock(nn.Module):
         #self.attn = FlashMultiHeadAttention(d_model, n_heads, dropout)
         self.attn_norm = nn.LayerNorm(d_model)
         self.attn_dropout = nn.Dropout(dropout)
-
+        '''
         self.ffn = nn.Sequential(
             nn.Linear(d_model, ffn_dim),
             nn.ReLU(),
@@ -51,6 +94,9 @@ class TransformerBlock(nn.Module):
             nn.Linear(ffn_dim, d_model),
             nn.Dropout(dropout)
         )
+        '''
+
+        self.ffn = MoELayer(d_model, ffn_dim, num_experts=4, dropout=dropout)
         self.ffn_norm = nn.LayerNorm(d_model)
 
     def forward(self, x, mask=None, return_attn=False):
