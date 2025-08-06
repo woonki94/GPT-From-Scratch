@@ -6,89 +6,10 @@ import math
 import torch
 import torch.nn as nn
 import math
-
+from attentions import MultiHeadAttention, MultiQueryAttention
 #from flash_attn.modules.mha import MHA
 
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, q_input_dim, cand_input_dim, d_model, n_heads, dropout=0.1):
-        super().__init__()
-        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
-
-        self.n_heads = n_heads
-        self.d_head = d_model // n_heads
-
-        # Projections for Q, K, V
-        self.q_proj = nn.Linear(q_input_dim, d_model)
-        self.k_proj = nn.Linear(cand_input_dim, d_model)
-        self.v_proj = nn.Linear(cand_input_dim, d_model)
-
-        # Final output projection
-        self.out_proj = nn.Linear(d_model, d_model)
-
-        # Dropout on attention weights
-        self.dropout = nn.Dropout(dropout)
-
-        # Scaling factor (root dim)
-        self.scale = math.sqrt(self.d_head)
-
-    def forward(self, qkv, mask=None):
-        B, T_kv, _ = qkv.size()
-        _, T_q, _ = qkv.size()
-
-        # Linear projections
-        Q = self.q_proj(qkv)  # [B, T_qkv, d_model]
-        K = self.k_proj(qkv)  # [B, T_qkv, d_model]
-        V = self.v_proj(qkv)  # [B, T_qkv, d_model]
-
-        # Split into heads: [B, T, d_model] → [B, n_heads, T, d_head]
-        Q = Q.view(B, T_q, self.n_heads, self.d_head).transpose(1, 2)  # [B, n_heads, T_q, d_head]
-        K = K.view(B, T_kv, self.n_heads, self.d_head).transpose(1, 2)  # [B, n_heads, T_kv, d_head]
-        V = V.view(B, T_kv, self.n_heads, self.d_head).transpose(1, 2)  # [B, n_heads, T_kv, d_head]
-
-        # Compute scaled dot-product attention
-        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale  # [B, n_heads, T_q, T_kv]
-
-        if mask is not None:
-            # Accept [L, L] masks and expand to [B, heads, L, L]
-            if mask.dim() == 2:  # [L, L]
-                mask = mask.unsqueeze(0).unsqueeze(0)  # [1, 1, L, L]
-                mask = mask.expand(B, self.n_heads, T_q, T_kv)
-
-            attn_scores = attn_scores.masked_fill(mask, float('-inf'))
-
-        attn_weights = torch.softmax(attn_scores, dim=-1)  # [B, n_heads, T_q, T_kv]
-        attn_weights = self.dropout(attn_weights)
-
-        # Weighted sum
-        attended = torch.matmul(attn_weights, V)  # [B, n_heads, T_q, d_head]
-
-        # Combine heads
-        attended = attended.transpose(1, 2).contiguous()  # [B, T_q, n_heads, d_head]
-        attended = attended.view(B, T_q, self.n_heads * self.d_head)  # [B, T_q, d_model]
-
-        # Final projection
-        output = self.out_proj(attended)  # [B, T_q, d_model]
-
-        return output, attn_weights
-
-'''
-class FlashMultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_heads, dropout=0.1):
-        super().__init__()
-        self.flash_attn = MHA(
-            embed_dim=d_model,
-            num_heads=n_heads,
-            dropout=dropout,
-            causal=True,     # very important for decoder-style (GPT) models
-            #bias=True        # match your original setup
-        )
-
-    def forward(self, x, mask=None):
-        # FlashAttention handles causal masking internally
-        out = self.flash_attn(x)
-        return out, None  # match original API (output, attn_weights)
-'''
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model):
