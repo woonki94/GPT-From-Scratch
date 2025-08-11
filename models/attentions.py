@@ -88,7 +88,7 @@ class MultiQueryAttention(nn.Module):
         _, T_kv, _ = kv.size()
 
         # Q: [B, H, T, Dh]
-        Q = self.q_proj(q).view(B, T, self.n_heads, self.d_head).transpose(1, 2)
+        Q = self.q_proj(q).view(B, T_q, self.n_heads, self.d_head).transpose(1, 2)
 
         # Shared K/V across heads → [B, 1, T, Dh]
         K = self.k_proj(kv).unsqueeze(1)
