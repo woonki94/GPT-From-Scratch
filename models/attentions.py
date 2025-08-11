@@ -5,7 +5,7 @@ from torch import nn
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, q_input_dim, cand_input_dim, d_model, n_heads, dropout=0.1):
+    def __init__(self, q_input_dim, kv_input_dim, d_model, n_heads, dropout=0.1):
         super().__init__()
         assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
 
@@ -14,8 +14,8 @@ class MultiHeadAttention(nn.Module):
 
         # Projections for Q, K, V
         self.q_proj = nn.Linear(q_input_dim, d_model)
-        self.k_proj = nn.Linear(cand_input_dim, d_model)
-        self.v_proj = nn.Linear(cand_input_dim, d_model)
+        self.k_proj = nn.Linear(kv_input_dim, d_model)
+        self.v_proj = nn.Linear(kv_input_dim, d_model)
 
         # Final output projection
         self.out_proj = nn.Linear(d_model, d_model)
@@ -26,14 +26,14 @@ class MultiHeadAttention(nn.Module):
         # Scaling factor (root dim)
         self.scale = math.sqrt(self.d_head)
 
-    def forward(self, qkv, mask=None):
-        B, T_kv, _ = qkv.size()
-        _, T_q, _ = qkv.size()
+    def forward(self, q, kv, mask=None):  # <— separate inputs
+        B, T_q, _  = q.size()
+        _, T_kv, _ = kv.size()
 
         # Linear projections
-        Q = self.q_proj(qkv)  # [B, T_qkv, d_model]
-        K = self.k_proj(qkv)  # [B, T_qkv, d_model]
-        V = self.v_proj(qkv)  # [B, T_qkv, d_model]
+        Q = self.q_proj(q)  # [B, T_qkv, d_model]
+        K = self.k_proj(kv)  # [B, T_qkv, d_model]
+        V = self.v_proj(kv)  # [B, T_qkv, d_model]
 
         # Split into heads: [B, T, d_model] → [B, n_heads, T, d_head]
         Q = Q.view(B, T_q, self.n_heads, self.d_head).transpose(1, 2)  # [B, n_heads, T_q, d_head]
@@ -83,15 +83,16 @@ class MultiQueryAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.scale = math.sqrt(self.d_head)
 
-    def forward(self, x, mask=None):
-        B, T, _ = x.size()
+    def forward(self, q, kv, mask=None):
+        B, T_q, _  = q.size()
+        _, T_kv, _ = kv.size()
 
         # Q: [B, H, T, Dh]
-        Q = self.q_proj(x).view(B, T, self.n_heads, self.d_head).transpose(1, 2)
+        Q = self.q_proj(q).view(B, T, self.n_heads, self.d_head).transpose(1, 2)
 
         # Shared K/V across heads → [B, 1, T, Dh]
-        K = self.k_proj(x).unsqueeze(1)
-        V = self.v_proj(x).unsqueeze(1)
+        K = self.k_proj(kv).unsqueeze(1)
+        V = self.v_proj(kv).unsqueeze(1)
 
         # Attention scores: [B, H, T, T]
         attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale

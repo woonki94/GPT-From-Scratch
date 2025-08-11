@@ -6,7 +6,7 @@ import math
 import torch
 import torch.nn as nn
 import math
-from attentions import MultiHeadAttention, MultiQueryAttention
+from models.attentions import MultiHeadAttention, MultiQueryAttention
 #from flash_attn.modules.mha import MHA
 
 
@@ -82,7 +82,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, ffn_dim, dropout=0.1):
         super().__init__()
 
-        self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
+        #self.attn = MultiHeadAttention(d_model, d_model, d_model, n_heads, dropout)
+        self.attn = MultiQueryAttention(d_model, d_model, d_model, n_heads, dropout)
         #self.attn = FlashMultiHeadAttention(d_model, n_heads, dropout)
         self.attn_norm = nn.LayerNorm(d_model)
         self.attn_dropout = nn.Dropout(dropout)
